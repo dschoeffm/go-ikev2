@@ -1,0 +1,12 @@
+peers:
+  - name: vpn-server
+    remoteAddr: 1.2.3.4
+    ikeProposals: &default_proposal
+      - prfs: [prfsha512]
+        dhGrps: [modp2048]
+        encrs: [aes256ctr]
+        auths: [sha512]
+    childSas:
+      proposals: *default_proposal
+      remoteTrafficSel: 10.0.0.0/24
+      saType: esp

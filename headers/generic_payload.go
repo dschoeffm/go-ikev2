@@ -12,7 +12,12 @@ type ikev2PayloadHdr struct {
 }
 
 func newIKEv2PayloadHdr(content []byte) *ikev2PayloadHdr {
-	return &ikev2PayloadHdr{assembled: content}
+	hdr := &ikev2PayloadHdr{assembled: content}
+	// TODO Check if content is actually long enough
+	if len(hdr.assembled) != int(hdr.Length()) {
+		hdr.assembled = hdr.assembled[0:int(hdr.Length())]
+	}
+	return hdr
 }
 
 func (hdr *ikev2PayloadHdr) NextPayload() byte {
@@ -39,9 +44,10 @@ func (hdr *ikev2PayloadHdr) Payload() []byte {
 
 func (hdr *ikev2PayloadHdr) GetGenericDesc() string {
 	ret := fmt.Sprintf(`Generic Payload Header:
-  Next Payload:     0x%x
-  Reserved:         0x%x
-  Payload Length:   0x%x
+  Next Payload:   %d
+  Reserved:       0x%x
+  Payload Length: %d
 `, hdr.NextPayload(), hdr.Reserved(), hdr.Length())
+	print(ret)
 	return ret
 }

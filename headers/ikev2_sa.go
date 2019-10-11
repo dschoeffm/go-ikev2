@@ -63,7 +63,13 @@ type transform struct {
 }
 
 func newTransform(content []byte) *transform {
-	return &transform{assembled: content}
+	t := &transform{assembled: content}
+	// TODO make sure slice is long enough
+	if len(t.assembled) != int(t.Length()) {
+		t.assembled = t.assembled[:int(t.Length())]
+	}
+
+	return t
 }
 
 func (hdr *transform) LastSubstruc() bool {
@@ -122,98 +128,130 @@ func (hdr *transform) GetDesc() string {
 
 // --- Proposals ---
 
-type proposal struct {
+type Proposal struct {
 	assembled []byte
 }
 
-func newProposal(content []byte) *proposal {
-	return &proposal{assembled: content}
+func newProposal(content []byte) *Proposal {
+	return &Proposal{assembled: content}
 }
 
-func (hdr *proposal) LastSubstruc() bool {
+func (hdr *Proposal) LastSubstruc() bool {
 	return hdr.assembled[0] == 0
 }
 
-func (hdr *proposal) Reserved() uint8 {
+func (hdr *Proposal) Reserved() uint8 {
 	return uint8(hdr.assembled[1])
 }
 
-func (hdr *proposal) Length() uint16 {
+func (hdr *Proposal) Length() uint16 {
 	return binary.BigEndian.Uint16(hdr.assembled[2:4])
 }
 
-func (hdr *proposal) Num() uint8 {
+func (hdr *Proposal) Num() uint8 {
 	return uint8(hdr.assembled[4])
 }
 
-func (hdr *proposal) ProtocolId() uint8 {
+func (hdr *Proposal) ProtocolID() uint8 {
 	return uint8(hdr.assembled[5])
 }
 
-func (hdr *proposal) SpiSize() uint8 {
+func (hdr *Proposal) SpiSize() uint8 {
 	return uint8(hdr.assembled[6])
 }
 
-func (hdr *proposal) NumTransforms() uint8 {
+func (hdr *Proposal) NumTransforms() uint8 {
 	return uint8(hdr.assembled[7])
 }
 
-func (hdr *proposal) Spi() []byte {
+func (hdr *Proposal) Spi() []byte {
 	return hdr.assembled[8:(8 + hdr.SpiSize())]
 }
 
-func (hdr *proposal) Transforms() []transform {
+func (hdr *Proposal) Transforms() []transform {
 	// TODO: What if not transform is sent at all? (Not allowed by RFC, but
 	// anyways...)
-	transforms_raw := hdr.assembled[8:(8 + hdr.SpiSize())]
-	transforms := make([]transform, 1)
+	transformsRaw := hdr.assembled[(8 + hdr.SpiSize()):]
+	transforms := make([]transform, 0)
 	moreTransforms := true
-	trans_start := 0
-	all_length := len(transforms_raw)
+	transStart := 0
+	allLength := len(transformsRaw)
 
 	// Don't rely only on moreTransforms. Could be bogus...
-	for moreTransforms && (trans_start < all_length) {
-		trans := newTransform(transforms_raw[trans_start:])
+	for moreTransforms && (transStart < allLength) {
+		trans := newTransform(transformsRaw[transStart:])
 		moreTransforms = !trans.LastSubstruc()
-		trans_start += int(trans.Length())
+		transStart += int(trans.Length())
 		transforms = append(transforms, *trans)
 	}
 
 	return transforms
 }
 
-// func GetDesc...
+func (hdr *Proposal) GetDesc() string {
+
+	ret := fmt.Sprintf(`Proposal:
+	Last Substruc: 0x%t
+	Reserved:      0x%x
+	Length:        0x%x
+	Num:           0x%x
+	ProtocolId:    0x%x
+	SpiSize:       0x%x
+	NumTransforms: 0x%x
+	SPI:           0x%x
+  `, hdr.LastSubstruc(), hdr.Reserved(), hdr.Length(),
+		hdr.Num(), hdr.ProtocolID(), hdr.SpiSize(),
+		hdr.NumTransforms(), hdr.Spi())
+
+	for _, trans := range hdr.Transforms() {
+		ret += trans.GetDesc()
+	}
+	return ret
+}
 
 // --- Complete Hdr ---
 
-// TODO make use of generic payload hdr
-
-type ikev2Sa struct {
-	ikev2PayloadHdr
+// Ikev2Sa Struct to describe one IKEv2 Sa payload
+type Ikev2Sa struct {
+	assembled []byte
 }
 
-func NewIKEv2Sa(content []byte) *ikev2Sa {
-	var ret ikev2Sa
+// NewIKEv2Sa Create a new IKEv2 SA payload from a generic payload
+func NewIKEv2Sa(content []byte) *Ikev2Sa {
+	var ret Ikev2Sa
 	ret.assembled = content
 	return &ret
 }
 
-func (hdr *ikev2Sa) Proposals() []proposal {
-	proposalsRaw := hdr.Payload()
+// GetType Returns static byte as defined in the RFC
+func (Ikev2Sa) GetType() byte {
+	return 33
+}
+
+// Proposals Get all the proposals from the IKEv2 SA payload
+func (hdr *Ikev2Sa) Proposals() []Proposal {
+	proposalsRaw := hdr.assembled
 	proposalsRawLen := len(proposalsRaw)
 	moreProposals := true
 	propStart := 0
-	proposals := make([]proposal, 1)
+	proposals := make([]Proposal, 0)
 
+	// TODO this somehow needs to be save from loops
 	for moreProposals && (propStart < proposalsRawLen) {
 		proposal := newProposal(proposalsRaw[propStart:])
 		moreProposals = !proposal.LastSubstruc()
 		proposals = append(proposals, *proposal)
+		propStart += int(proposal.Length())
 	}
 
 	return proposals
 }
 
-func (hdr *ikev2Sa) GetDesc() string {
-	return ""
+// GetDesc Returns a string describing the IKEv2 SA payload
+func (hdr *Ikev2Sa) GetDesc() string {
+	ret := ""
+	for _, prop := range hdr.Proposals() {
+		ret += prop.GetDesc()
+	}
+	return ret
 }
